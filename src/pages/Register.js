@@ -141,9 +141,10 @@ const Register = () => {
         values.email, 
         values.password
       );
-      // Send email verification
+      // Send email verification with explicit app URL
+      const appUrl = process.env.REACT_APP_APP_URL || window.location.origin;
       await sendEmailVerification(userCredential.user, {
-        url: `${window.location.origin}/verify-email?redirect=${values.role}-dashboard`,
+        url: `${appUrl}/verify-email?redirect=${values.role}-dashboard`,
       });
       // Create user document in Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {

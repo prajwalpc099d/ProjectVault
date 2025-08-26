@@ -250,7 +250,7 @@ likedProjectsData.forEach(project => {
 const ViewProjects = () => {
   // State management
   const [projects, setProjects] = useState([]);
-  const [filteredProjects, setFilteredProjects] = useState([]);
+  // Derived list will be computed via useMemo to avoid extra renders
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [user] = useAuthState(auth);
@@ -260,6 +260,7 @@ const ViewProjects = () => {
 
   // Filter and sort state
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('dateDesc');
   const [selectedInterests, setSelectedInterests] = useState([]);
@@ -275,6 +276,55 @@ const ViewProjects = () => {
   // Interaction state
   const [interactions, setInteractions] = useState({});
   const [interactionCounts, setInteractionCounts] = useState({});
+
+  // Debounce search input to reduce recomputations
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchTerm), 200);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+
+  // Compute filteredProjects from inputs to avoid state churn that can cause flicker
+  const filteredProjects = React.useMemo(() => {
+    let filtered = [...projects];
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(proj => proj.status?.toLowerCase() === statusFilter);
+    }
+
+    if (debouncedSearch.trim()) {
+      const term = debouncedSearch.toLowerCase();
+      filtered = filtered.filter(proj =>
+        (proj.title || '').toLowerCase().includes(term) ||
+        (proj.description || '').toLowerCase().includes(term)
+      );
+    }
+
+    if (selectedInterests.length > 0) {
+      filtered = filtered.filter(proj => proj.tags?.some(tag => selectedInterests.includes(tag)));
+    }
+
+    const getDate = (d) => (d instanceof Date ? d.getTime() : (d && d.toDate ? d.toDate().getTime() : 0));
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'dateDesc':
+          return getDate(b.createdAt) - getDate(a.createdAt);
+        case 'dateAsc':
+          return getDate(a.createdAt) - getDate(b.createdAt);
+        case 'titleAsc':
+          return (a.title || '').localeCompare(b.title || '');
+        case 'titleDesc':
+          return (b.title || '').localeCompare(a.title || '');
+        case 'likesDesc':
+          return (interactionCounts[b.id]?.likes || 0) - (interactionCounts[a.id]?.likes || 0);
+        case 'usefulDesc':
+          return (interactionCounts[b.id]?.useful || 0) - (interactionCounts[a.id]?.useful || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [projects, statusFilter, debouncedSearch, selectedInterests, sortBy, interactionCounts]);
 
   const showSnackbar = (message, severity = 'info') => {
     setSnackbar({ open: true, message, severity });
@@ -297,7 +347,7 @@ const ViewProjects = () => {
     setExpandedProject(expandedProject === projectId ? null : projectId);
   };
 
-  const fetchProjects = async () => {
+  const fetchProjects = React.useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -307,7 +357,6 @@ const ViewProjects = () => {
 
       if (projectsSnapshot.empty) {
         setProjects([]);
-        setFilteredProjects([]);
         setInteractionCounts({});
         return;
       }
@@ -347,7 +396,6 @@ const ViewProjects = () => {
       }, {});
 
       setProjects(projectsData);
-      setFilteredProjects(projectsData);
       setInteractionCounts(countsMap);
 
     } catch (err) {
@@ -357,9 +405,9 @@ const ViewProjects = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setLoading, setError, setProjects, setInteractionCounts]);
 
-  const fetchUserInteractions = async () => {
+  const fetchUserInteractions = React.useCallback(async () => {
     if (!user) return;
 
     try {
@@ -376,55 +424,14 @@ const ViewProjects = () => {
       console.error('Error fetching user interactions:', err);
       showSnackbar('Failed to load your interactions', 'error');
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchProjects();
     fetchUserInteractions();
-  }, [user, fetchProjects, fetchUserInteractions]);
+  }, [fetchProjects, fetchUserInteractions]);
 
-  useEffect(() => {
-    let filtered = [...projects];
-
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(proj => proj.status?.toLowerCase() === statusFilter);
-    }
-
-    if (searchTerm.trim()) {
-      filtered = filtered.filter(proj =>
-        proj.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        proj.description.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (selectedInterests.length > 0) {
-      filtered = filtered.filter(proj => {
-        return proj.tags?.some(tag => selectedInterests.includes(tag));
-      });
-    }
-
-    const getDate = (d) => (d instanceof Date ? d.getTime() : (d && d.toDate ? d.toDate().getTime() : 0));
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'dateDesc':
-          return getDate(b.createdAt) - getDate(a.createdAt);
-        case 'dateAsc':
-          return getDate(a.createdAt) - getDate(b.createdAt);
-        case 'titleAsc':
-          return a.title.localeCompare(b.title);
-        case 'titleDesc':
-          return b.title.localeCompare(a.title);
-        case 'likesDesc':
-          return (interactionCounts[b.id]?.likes || 0) - (interactionCounts[a.id]?.likes || 0);
-        case 'usefulDesc':
-          return (interactionCounts[b.id]?.useful || 0) - (interactionCounts[a.id]?.useful || 0);
-        default:
-          return 0;
-      }
-    });
-
-    setFilteredProjects(filtered);
-  }, [searchTerm, statusFilter, sortBy, projects, selectedInterests, interactionCounts]);
+  
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this project?')) return;
@@ -455,7 +462,6 @@ const ViewProjects = () => {
       await batch.commit();
       
       setProjects(prev => prev.filter(project => project.id !== id));
-      setFilteredProjects(prev => prev.filter(project => project.id !== id));
       
       showSnackbar('Project deleted successfully', 'success');
       
