@@ -14,6 +14,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// Use the device/browser language for auth emails
+try { auth.useDeviceLanguage(); } catch (_) {}
 const db = getFirestore(app);
 const storage = getStorage(app); // Initialize storage
 

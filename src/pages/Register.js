@@ -141,11 +141,16 @@ const Register = () => {
         values.email, 
         values.password
       );
-      // Send email verification with explicit app URL
+      // Send email verification with explicit app URL; fallback to default if blocked
       const appUrl = process.env.REACT_APP_APP_URL || window.location.origin;
-      await sendEmailVerification(userCredential.user, {
-        url: `${appUrl}/verify-email?redirect=${values.role}-dashboard`,
-      });
+      try {
+        await sendEmailVerification(userCredential.user, {
+          url: `${appUrl}/verify-email?redirect=${values.role}-dashboard`,
+        });
+      } catch (e) {
+        console.warn('sendEmailVerification with appUrl failed, retrying without actionCodeSettings', e);
+        await sendEmailVerification(userCredential.user);
+      }
       // Create user document in Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         email: values.email,
