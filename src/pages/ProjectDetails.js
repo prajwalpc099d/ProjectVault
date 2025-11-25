@@ -64,6 +64,7 @@ const ProjectDetails = () => {
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
   const [feedbackList, setFeedbackList] = useState([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [previewContent, setPreviewContent] = useState(null);
 
   const tagOptions = [
     'Web Development',
@@ -408,7 +409,19 @@ const ProjectDetails = () => {
                         primary={project.uploads.projectFile.name}
                         secondary={`${(project.uploads.projectFile.size / 1024 / 1024).toFixed(2)} MB`}
                       />
-                      <FileTypeIcon type={project.uploads.projectFile.type} />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          component="a"
+                          href={project.uploads.projectFile.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Download
+                        </Button>
+                        <FileTypeIcon type={project.uploads.projectFile.type} />
+                      </Box>
                     </ListItem>
                   )}
                   {project.uploads.report && (
@@ -417,7 +430,26 @@ const ProjectDetails = () => {
                         primary={project.uploads.report.name}
                         secondary={`${(project.uploads.report.size / 1024 / 1024).toFixed(2)} MB`}
                       />
-                      <FileTypeIcon type={project.uploads.report.type} />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setPreviewContent({ ...project.uploads.report, label: 'Project Report' })}
+                        >
+                          Preview
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          component="a"
+                          href={project.uploads.report.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Download
+                        </Button>
+                        <FileTypeIcon type={project.uploads.report.type} />
+                      </Box>
                     </ListItem>
                   )}
                   {project.uploads.images?.map((image, index) => (
@@ -426,7 +458,26 @@ const ProjectDetails = () => {
                         primary={`Image ${index + 1}`}
                         secondary={`${(image.size / 1024 / 1024).toFixed(2)} MB`}
                       />
-                      <FileTypeIcon type={image.type} />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setPreviewContent({ ...image, label: `Image ${index + 1}` })}
+                        >
+                          Preview
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          component="a"
+                          href={image.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Download
+                        </Button>
+                        <FileTypeIcon type={image.type} />
+                      </Box>
                     </ListItem>
                   ))}
                   {project.uploads.videos?.map((video, index) => (
@@ -435,7 +486,26 @@ const ProjectDetails = () => {
                         primary={`Video ${index + 1}`}
                         secondary={`${(video.size / 1024 / 1024).toFixed(2)} MB`}
                       />
-                      <FileTypeIcon type={video.type} />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setPreviewContent({ ...video, label: `Video ${index + 1}` })}
+                        >
+                          Preview
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          component="a"
+                          href={video.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Download
+                        </Button>
+                        <FileTypeIcon type={video.type} />
+                      </Box>
                     </ListItem>
                   ))}
                 </List>
@@ -640,6 +710,61 @@ const ProjectDetails = () => {
           >
             Submit Feedback
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* File Preview Dialog */}
+      <Dialog
+        open={Boolean(previewContent)}
+        onClose={() => setPreviewContent(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>{previewContent?.label || 'File Preview'}</DialogTitle>
+        <DialogContent dividers>
+          {previewContent?.type?.includes('image') && (
+            <Box
+              component="img"
+              src={previewContent.url}
+              alt={previewContent.label}
+              sx={{ width: '100%', borderRadius: 2 }}
+            />
+          )}
+          {previewContent?.type?.includes('video') && (
+            <Box component="video" controls sx={{ width: '100%', borderRadius: 2 }}>
+              <source src={previewContent.url} type={previewContent.type} />
+              Your browser does not support the video tag.
+            </Box>
+          )}
+          {previewContent?.type?.includes('pdf') && (
+            <Box sx={{ height: 500 }}>
+              <iframe
+                src={`${previewContent.url}#toolbar=1`}
+                title="PDF Preview"
+                width="100%"
+                height="100%"
+                style={{ border: 'none' }}
+              />
+            </Box>
+          )}
+          {!previewContent?.type && previewContent && (
+            <Typography>
+              Preview not available for this file type. Please download the file to view it.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPreviewContent(null)}>Close</Button>
+          {previewContent?.url && (
+            <Button
+              component="a"
+              href={previewContent.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Download
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
       </Paper>
