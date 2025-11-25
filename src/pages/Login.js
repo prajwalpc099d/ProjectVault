@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth, db } from '../firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendEmailVerification, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { TextField, Button, Typography, Box, IconButton, InputAdornment, Paper, Fade, Grow } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
@@ -24,6 +24,26 @@ const Login = () => {
       const userCredential = await signInWithEmailAndPassword(auth, form.email, form.password);
       const user = userCredential.user;
 
+      // If email not verified, send (or resend) verification and stop login flow
+      if (!user.emailVerified) {
+        try {
+          const appUrl = process.env.REACT_APP_APP_URL || window.location.origin;
+          await sendEmailVerification(user, { url: `${appUrl}/verify-email` });
+          setSnackbar({ open: true, message: 'Verification email sent. Please verify your email, then sign in.', severity: 'info' });
+        } catch (e) {
+          // Fallback without actionCodeSettings
+          try {
+            await sendEmailVerification(user);
+            setSnackbar({ open: true, message: 'Verification email sent. Please verify your email, then sign in.', severity: 'info' });
+          } catch (inner) {
+            setSnackbar({ open: true, message: 'Could not send verification email: ' + inner.message, severity: 'error' });
+          }
+        } finally {
+          try { await signOut(auth); } catch (_) {}
+        }
+        return;
+      }
+
       // Get user role from Firestore
       const docRef = doc(db, 'users', user.uid);
       const docSnap = await getDoc(docRef);
@@ -40,6 +60,27 @@ const Login = () => {
 
     } catch (err) {
       setSnackbar({ open: true, message: 'Login Failed: ' + err.message, severity: 'error' });
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!form.email || !form.password) {
+      setSnackbar({ open: true, message: 'Enter email and password to resend verification.', severity: 'warning' });
+      return;
+    }
+    try {
+      const { user } = await signInWithEmailAndPassword(auth, form.email, form.password);
+      const appUrl = process.env.REACT_APP_APP_URL || window.location.origin;
+      try {
+        await sendEmailVerification(user, { url: `${appUrl}/verify-email` });
+      } catch (_) {
+        await sendEmailVerification(user);
+      }
+      setSnackbar({ open: true, message: 'Verification email sent. Check your inbox.', severity: 'success' });
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message, severity: 'error' });
+    } finally {
+      try { await signOut(auth); } catch (_) {}
     }
   };
 
@@ -256,6 +297,22 @@ const Login = () => {
                 }}
               >
                 Forgot Password?
+              </Button>
+              <Button 
+                variant="text" 
+                onClick={handleResendVerification} 
+                size="medium"
+                sx={{ 
+                  textTransform: 'none',
+                  fontWeight: 500,
+                  color: 'text.secondary',
+                  '&:hover': {
+                    color: 'primary.main',
+                    background: 'rgba(102, 126, 234, 0.08)'
+                  }
+                }}
+              >
+                Resend Verification Email
               </Button>
               <Button 
                 variant="outlined" 

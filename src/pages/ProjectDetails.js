@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Box, Typography, Button, 
   CircularProgress, Alert, Chip, Divider,
@@ -76,6 +76,24 @@ const ProjectDetails = () => {
     'Cybersecurity'
   ];
 
+  const fetchFeedback = useCallback(async () => {
+    try {
+      setLoadingFeedback(true);
+      const feedbackCol = collection(db, 'projects', projectId, 'feedback');
+      const feedbackSnap = await getDocs(feedbackCol);
+      const feedbackData = feedbackSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || null
+      }));
+      setFeedbackList(feedbackData);
+    } catch (err) {
+      console.error('Error fetching feedback:', err);
+    } finally {
+      setLoadingFeedback(false);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     const fetchProject = async () => {
       try {
@@ -90,7 +108,9 @@ const ProjectDetails = () => {
             ...projectData,
             createdAt: projectData.createdAt?.toDate?.() || null,
             updatedAt: projectData.updatedAt?.toDate?.() || null,
-            tags: Array.isArray(projectData.tags) ? projectData.tags : []
+            tags: Array.isArray(projectData.tags) ? projectData.tags : [],
+            likes: Array.isArray(projectData.likes) ? projectData.likes : [],
+            bookmarks: Array.isArray(projectData.bookmarks) ? projectData.bookmarks : []
           });
           
           // Set edit form values
@@ -124,24 +144,6 @@ const ProjectDetails = () => {
 
     fetchProject();
   }, [projectId, user, fetchFeedback]);
-
-  const fetchFeedback = async () => {
-    try {
-      setLoadingFeedback(true);
-      const feedbackCol = collection(db, 'projects', projectId, 'feedback');
-      const feedbackSnap = await getDocs(feedbackCol);
-      const feedbackData = feedbackSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate?.() || null
-      }));
-      setFeedbackList(feedbackData);
-    } catch (err) {
-      console.error('Error fetching feedback:', err);
-    } finally {
-      setLoadingFeedback(false);
-    }
-  };
 
   const handleEditProject = () => {
     setEditOpen(true);
@@ -228,8 +230,26 @@ const ProjectDetails = () => {
         await updateDoc(doc(db, 'projects', projectId), {
           likes: newValue ? arrayUnion(user.uid) : arrayRemove(user.uid)
         });
+        // Update local project state
+        setProject(prev => ({
+          ...prev,
+          likes: newValue 
+            ? [...(prev.likes || []), user.uid]
+            : (prev.likes || []).filter(uid => uid !== user.uid)
+        }));
       } else {
         setBookmarked(newValue);
+        // Update bookmark count using array operations
+        await updateDoc(doc(db, 'projects', projectId), {
+          bookmarks: newValue ? arrayUnion(user.uid) : arrayRemove(user.uid)
+        });
+        // Update local project state
+        setProject(prev => ({
+          ...prev,
+          bookmarks: newValue 
+            ? [...(prev.bookmarks || []), user.uid]
+            : (prev.bookmarks || []).filter(uid => uid !== user.uid)
+        }));
       }
 
       // Notify project owner about interaction
@@ -486,7 +506,14 @@ const ProjectDetails = () => {
                 color={bookmarked ? 'secondary' : 'default'}
                 sx={{ minWidth: 120 }}
               >
+                <Badge 
+                  badgeContent={project.bookmarks?.length || 0} 
+                  color="secondary"
+                  max={999}
+                  sx={{ mr: 1 }}
+              >
                 {bookmarked ? 'Saved' : 'Save'}
+                </Badge>
               </Button>
             </Tooltip>
             

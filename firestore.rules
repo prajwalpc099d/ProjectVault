@@ -1,0 +1,389 @@
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+
+
+    // ---------- Helper functions ----------
+
+    // Returns the caller's role from custom claims if present; otherwise falls back to users/{uid}.role
+
+    function callerRole() {
+
+      // Prefer custom claim (trusted); fallback to Firestore user doc if available
+
+      return (request.auth.token.role != null) ? request.auth.token.role
+
+             : (exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
+
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : null);
+
+    }
+
+
+
+    function isAdminOrFaculty() {
+
+      return request.auth != null && (
+
+        // Check custom claim first
+
+        (request.auth.token.role == 'admin' || request.auth.token.role == 'faculty') ||
+
+        // Fallback to Firestore user document
+
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || 
+
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty'))
+
+      );
+
+    }
+
+
+
+    function isAuthenticated() {
+
+      return request.auth != null;
+
+    }
+
+
+
+    // Checks whether the authenticated user is the owner of the given resource
+
+    // For uses in rules where `resource` exists (read/update/delete), use isOwnerResource(resource)
+
+    function isOwnerByResource() {
+
+      return isAuthenticated() && (
+
+        // ownerId field preferred
+
+        (resource.data.ownerId != null && resource.data.ownerId == request.auth.uid) ||
+
+        // alternate checks
+
+        (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
+
+        (resource.data.userId != null && resource.data.userId == request.auth.uid)
+
+      );
+
+    }
+
+
+
+    // For create request checks where resource doesn't exist yet, check request.resource
+
+    function isOwnerByRequest() {
+
+      return isAuthenticated() && (
+
+        (request.resource.data.ownerId != null && request.resource.data.ownerId == request.auth.uid) ||
+
+        (request.resource.data.ownerEmail != null && request.resource.data.ownerEmail == request.auth.token.email) ||
+
+        (request.resource.data.userId != null && request.resource.data.userId == request.auth.uid)
+
+      );
+
+    }
+
+    
+    // Helper function to check if update only affects interaction fields (likes, bookmarks, views)
+    function isInteractionFieldUpdate() {
+      // Get the diff between old and new data
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['title', 'description', 'ownerId', 'ownerEmail', 'userId', 'status', 'githubLink', 'tags', 'uploads', 'createdAt', 'updatedAt']) && 
+             (request.resource.data.diff(resource.data).affectedKeys().hasAny(['likes']) || 
+              request.resource.data.diff(resource.data).affectedKeys().hasAny(['bookmarks']) || 
+              request.resource.data.diff(resource.data).affectedKeys().hasAny(['views']));
+    }
+
+
+
+    // ---------- ROOT-LEVEL NOTIFICATIONS COLLECTION ----------
+
+    match /notifications/{notificationId} {
+
+      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+
+      allow read: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+
+      allow update: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+
+      allow delete: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+
+    }
+
+
+
+    // ---------- USERS COLLECTION ----------
+
+    match /users/{userId} {
+
+      // Any authenticated user can read user profiles (you can tighten later if you want)
+
+      allow read: if isAuthenticated();
+
+
+
+      // Create: user may create their own profile, or admins may create (e.g., admin provisioning)
+
+      allow create: if isAuthenticated() && (
+
+        request.auth.uid == userId || isAdminOrFaculty()
+
+      );
+
+
+
+      // Update: default to the user themself OR admin/faculty (admins can update user docs)
+
+      allow update: if isAuthenticated() && (
+
+        request.auth.uid == userId || isAdminOrFaculty()
+
+      );
+
+
+
+      // Delete: user themself OR admin/faculty can delete
+
+      allow delete: if isAuthenticated() && (
+
+        request.auth.uid == userId || isAdminOrFaculty()
+
+      );
+
+
+
+      // USER INTERACTIONS SUBCOLLECTION
+
+      match /interactions/{projectId} {
+
+        // Owner of the user document may read/write their subcollection; admin may too
+
+        allow read, write, delete: if isAuthenticated() && (
+
+          request.auth.uid == userId || isAdminOrFaculty()
+
+        );
+
+      }
+
+
+
+      // USER NOTIFICATIONS SUBCOLLECTION (backwards compatibility)
+
+      match /notifications/{notificationId} {
+
+        allow read, write: if isAuthenticated() && (
+
+          request.auth.uid == userId || isAdminOrFaculty()
+
+        );
+
+      }
+
+
+
+      // USER NOTIFICATION SETTINGS SUBCOLLECTION
+
+      match /notificationSettings/{settingId} {
+
+        allow read, write: if isAuthenticated() && (
+
+          request.auth.uid == userId || isAdminOrFaculty()
+
+        );
+
+      }
+
+    }
+
+
+
+    // ---------- RECOMMENDATION SYSTEM ----------
+
+    match /projectSimilarities/{projectId} {
+
+      // Public read-only cache
+
+      allow read: if true;
+
+      allow write: if false;  // write only via trusted server/cloud functions
+
+    }
+
+
+
+    match /userSimilarities/{userId} {
+
+      // Read only to the owning user or admins
+
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrFaculty());
+
+      allow write: if false; // only server-side
+
+    }
+
+
+
+    match /recommendationCache/{userId} {
+
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminOrFaculty());
+
+      allow write: if false; // only server-side
+
+    }
+
+
+
+    // RECOMMENDATION LOGS
+
+    match /recommendationLogs/{logId} {
+
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      allow update, delete: if false;
+
+    }
+
+
+
+    // ---------- PROJECTS COLLECTION ----------
+
+    match /projects/{projectId} {
+
+      // Public read access for project listings and details
+
+      allow read: if true;
+
+
+
+      // Create: any authenticated user can create a project; ensure they set owner fields correctly
+
+      allow create: if isAuthenticated() && isOwnerByRequest();
+
+
+
+      // Update: owner OR admin/faculty can update, OR any authenticated user can update interaction fields only
+      allow update: if isAuthenticated() && (
+        isOwnerByResource() || 
+        isAdminOrFaculty() ||  // Admin/faculty can update any field
+        isInteractionFieldUpdate()
+      );
+
+
+
+      // Delete: owner OR admin/faculty can delete
+
+      allow delete: if isAuthenticated() && (isOwnerByResource() || isAdminOrFaculty());
+
+
+
+      // PROJECT INTERACTIONS SUBCOLLECTION
+
+      match /interactions/{interactionId} {
+
+        // Create: any authenticated user may create an interaction; ensure userId matches caller
+
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+
+
+        // Read: public
+
+        allow read: if true;
+
+
+
+        // Delete: interaction owner or admin/faculty
+
+        allow delete: if isAuthenticated() && (
+
+          resource.data.userId == request.auth.uid || isAdminOrFaculty()
+
+        );
+
+
+
+        allow update: if false;
+
+      }
+
+
+
+      // PROJECT FEEDBACK SUBCOLLECTION
+
+      match /feedback/{feedbackId} {
+
+        // Read: any authenticated user
+
+        allow read: if isAuthenticated();
+
+
+
+        // Create: authenticated users; ensure author matches token email to prevent forgery
+
+        allow create: if isAuthenticated() && request.resource.data.author == request.auth.token.email;
+
+
+
+        // Delete: feedback author (by email) or admin/faculty
+
+        allow delete: if isAuthenticated() && (
+
+          resource.data.author == request.auth.token.email || isAdminOrFaculty()
+
+        );
+
+
+
+        allow update: if false;
+
+      }
+
+    }
+
+
+
+    // ---------- GLOBAL INTERACTIONS (flat structure) ----------
+
+    match /interactions/{interactionId} {
+
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdminOrFaculty());
+
+      allow update: if false;
+
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdminOrFaculty());
+
+    }
+
+
+
+    // ---------- Admin-only collections / logs (example) ----------
+
+    // You can use a dedicated adminLogs collection if you want to store audit trails
+
+    match /adminLogs/{logId} {
+
+      allow create, read: if isAdminOrFaculty();
+
+      allow update, delete: if false;
+
+    }
+
+  }
+
+}
+

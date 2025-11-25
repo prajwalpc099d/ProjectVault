@@ -11,7 +11,7 @@ import StarIcon from '@mui/icons-material/Star';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebase';
 import { useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy, limit, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useTheme } from '@mui/material/styles';
 
@@ -77,11 +77,19 @@ const Home = () => {
   useEffect(() => {
     const fetchFeatured = async () => {
       try {
-        const q = query(collection(db, 'projects'));
+        const q = query(
+          collection(db, 'projects'),
+          where('status', '==', 'approved'),
+          orderBy('createdAt', 'desc'),
+          limit(1)
+        );
         const snap = await getDocs(q);
-        const approved = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.status === 'approved');
-        if (approved.length > 0) setFeatured(approved[0]);
-      } catch {}
+        if (!snap.empty) {
+          setFeatured({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        }
+      } catch (err) {
+        console.error('Error fetching featured project:', err);
+      }
     };
     fetchFeatured();
   }, []);

@@ -40,7 +40,9 @@ const RoleBasedRoute = ({ allowedRoles, children }) => {
         }
 
         const userRole = docSnap.data().role;
-        const isAuthorized = allowedRoles.includes(userRole);
+        const normalizedRole = (userRole || '').toLowerCase();
+        const allowed = (allowedRoles || []).map(r => (r || '').toLowerCase());
+        const isAuthorized = allowed.includes(normalizedRole);
 
         setStatus({
           loading: false,

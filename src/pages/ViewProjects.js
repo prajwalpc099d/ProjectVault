@@ -288,7 +288,11 @@ const ViewProjects = () => {
     let filtered = [...projects];
 
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(proj => proj.status?.toLowerCase() === statusFilter);
+      // Normalize status: handle null/undefined by defaulting to 'pending', and make comparison case-insensitive
+      filtered = filtered.filter(proj => {
+        const projectStatus = (proj.status || 'pending').toLowerCase();
+        return projectStatus === statusFilter.toLowerCase();
+      });
     }
 
     if (debouncedSearch.trim()) {
@@ -300,7 +304,12 @@ const ViewProjects = () => {
     }
 
     if (selectedInterests.length > 0) {
-      filtered = filtered.filter(proj => proj.tags?.some(tag => selectedInterests.includes(tag)));
+      // Make tag filtering case-insensitive
+      const normalizedInterests = selectedInterests.map(i => i.toLowerCase());
+      filtered = filtered.filter(proj => {
+        const projectTags = (proj.tags || []).map(tag => tag.toLowerCase());
+        return projectTags.some(tag => normalizedInterests.includes(tag));
+      });
     }
 
     const getDate = (d) => (d instanceof Date ? d.getTime() : (d && d.toDate ? d.toDate().getTime() : 0));
@@ -372,16 +381,32 @@ const ViewProjects = () => {
       const countsPromises = projectsData.map(async (project) => {
         const counts = { likes: 0, bookmarks: 0, useful: 0 };
         
+        // First, check array fields on project document (used by ProjectDetails)
+        if (Array.isArray(project.likes)) {
+          counts.likes = project.likes.length;
+        }
+        if (Array.isArray(project.bookmarks)) {
+          counts.bookmarks = project.bookmarks.length;
+        }
+        
+        // Then, check subcollection (used by ViewProjects) and use the higher count
         try {
           const interactionsRef = collection(db, 'projects', project.id, 'interactions');
           const interactionsSnap = await getDocs(interactionsRef);
           
+          let subcollectionLikes = 0;
+          let subcollectionBookmarks = 0;
+          
           interactionsSnap.forEach(interactionDoc => {
             const data = interactionDoc.data();
-            if (data.type === 'like') counts.likes++;
-            if (data.type === 'bookmark') counts.bookmarks++;
+            if (data.type === 'liked' || data.type === 'like') subcollectionLikes++;
+            if (data.type === 'bookmarked' || data.type === 'bookmark') subcollectionBookmarks++;
             if (data.type === 'useful') counts.useful++;
           });
+          
+          // Use the maximum count from either source (to handle both systems)
+          counts.likes = Math.max(counts.likes, subcollectionLikes);
+          counts.bookmarks = Math.max(counts.bookmarks, subcollectionBookmarks);
         } catch (err) {
           console.error(`Error fetching interactions for project ${project.id}:`, err);
         }
@@ -802,10 +827,11 @@ const ViewProjects = () => {
               {project.title}
             </Typography>
             <Chip 
-              label={project.status || 'pending'} 
+              label={(project.status || 'pending').charAt(0).toUpperCase() + (project.status || 'pending').slice(1).toLowerCase()} 
               color={
-                project.status === 'approved' ? 'success' : 
-                project.status === 'rejected' ? 'error' : 'default'
+                (project.status || '').toLowerCase() === 'approved' ? 'success' : 
+                (project.status || '').toLowerCase() === 'rejected' ? 'error' : 
+                (project.status || '').toLowerCase() === 'pending' ? 'warning' : 'default'
               } 
               size="small"
             />

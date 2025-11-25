@@ -43,88 +43,98 @@ const NotificationSettings = () => {
   const [message, setMessage] = useState({ text: '', severity: 'info' });
 
   useEffect(() => {
-    const loadSettings = async () => {
-      if (!user) return;
+    const loadData = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       
       try {
-        const settingsRef = doc(db, 'users', user.uid, 'notificationSettings', 'default');
-        const settingsSnap = await getDoc(settingsRef);
+        setLoading(true);
         
-        if (settingsSnap.exists()) {
-          setSettings(settingsSnap.data());
-        } else {
-          // Create default settings
-          const defaultSettings = {
-            emailNotifications: true,
-            pushNotifications: true,
-            projectUpdates: true,
-            statusChanges: true,
-            feedback: true,
-            announcements: true
-          };
-          await setDoc(settingsRef, defaultSettings);
-          setSettings(defaultSettings);
+        // Load notification settings
+        try {
+          const settingsRef = doc(db, 'users', user.uid, 'notificationSettings', 'default');
+          const settingsSnap = await getDoc(settingsRef);
+          
+          if (settingsSnap.exists()) {
+            setSettings(settingsSnap.data());
+          } else {
+            // Try loading from user document as fallback
+            const userRef = doc(db, 'users', user.uid);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists() && userSnap.data().notificationSettings) {
+              setSettings(userSnap.data().notificationSettings);
+            } else {
+              // Create default settings
+              const defaultSettings = {
+                projectUpdates: true,
+                feedback: true,
+                roleChanges: true,
+                systemAnnouncements: true,
+                welcomeMessages: true
+              };
+              await setDoc(settingsRef, defaultSettings);
+              setSettings(defaultSettings);
+            }
+          }
+        } catch (settingsError) {
+          console.error('Error loading settings:', settingsError);
+          // Continue even if settings fail to load
+        }
+
+        // Load notifications
+        try {
+          const notificationsRef = collection(db, 'notifications');
+          const q = query(
+            notificationsRef, 
+            where('recipientId', '==', user.uid), 
+            orderBy('createdAt', 'desc')
+          );
+          const notificationsSnap = await getDocs(q);
+          
+          const notificationsList = notificationsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() || new Date()
+          }));
+          
+          setNotifications(notificationsList);
+        } catch (notifError) {
+          console.error('Error loading notifications:', notifError);
+          // If query fails (maybe no index), try without orderBy
+          try {
+            const notificationsRef = collection(db, 'notifications');
+            const q = query(notificationsRef, where('recipientId', '==', user.uid));
+            const notificationsSnap = await getDocs(q);
+            
+            const notificationsList = notificationsSnap.docs
+              .map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                createdAt: doc.data().createdAt?.toDate?.() || new Date()
+              }))
+              .sort((a, b) => {
+                const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+                const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+                return dateB - dateA;
+              });
+            
+            setNotifications(notificationsList);
+          } catch (fallbackError) {
+            console.error('Error loading notifications (fallback):', fallbackError);
+            setNotifications([]);
+          }
         }
       } catch (error) {
-        console.error('Error loading settings:', error);
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    const loadNotifications = async () => {
-      if (!user) return;
-      
-      try {
-        const notificationsRef = collection(db, 'notifications');
-        const q = query(notificationsRef, where('recipientId', '==', user.uid), orderBy('createdAt', 'desc'));
-        const notificationsSnap = await getDocs(q);
-        
-        const notificationsList = notificationsSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate?.() || new Date()
-        }));
-        
-        setNotifications(notificationsList);
-      } catch (error) {
-        console.error('Error loading notifications:', error);
-      }
-    };
-
-    if (user) {
-      loadSettings();
-      loadNotifications();
-    }
+    loadData();
   }, [user]);
-
-  const loadSettings = async () => {
-    try {
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        if (userData.notificationSettings) {
-          setSettings(userData.notificationSettings);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading notification settings:', error);
-    }
-  };
-
-  const loadNotifications = async () => {
-    try {
-      const notifRef = collection(db, 'notifications');
-      const notifSnap = await getDocs(notifRef);
-      const notifs = notifSnap.docs
-        .filter(doc => doc.data().recipientId === user.uid)
-        .map(doc => ({ id: doc.id, ...doc.data() }));
-      setNotifications(notifs);
-    } catch (error) {
-      console.error('Error loading notifications:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSettingChange = (setting) => (event) => {
     setSettings(prev => ({

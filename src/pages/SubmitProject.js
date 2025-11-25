@@ -37,8 +37,43 @@ const MAX_IMAGES = 10;
 const MAX_VIDEOS = 5;
 
 const tagOptions = [
-  'Web Development', 'Mobile App', 'Data Science',
-  'Machine Learning', 'AI', 'IoT', 'Blockchain', 'Cybersecurity'
+  'Web Development',
+  'Mobile App',
+  'Data Science',
+  'Machine Learning',
+  'AI',
+  'IoT',
+  'Blockchain',
+  'Cybersecurity',
+  'Cloud Computing',
+  'Game Development',
+  'Full Stack',
+  'Frontend',
+  'Backend',
+  'DevOps',
+  'Database',
+  'API Development',
+  'UI/UX Design',
+  'Computer Vision',
+  'Natural Language Processing',
+  'Deep Learning',
+  'Robotics',
+  'Embedded Systems',
+  'Networking',
+  'Software Engineering',
+  'Web3',
+  'AR/VR',
+  'Automation',
+  'Testing',
+  'Microservices',
+  'Serverless',
+  'Open Source',
+  'E-commerce',
+  'Social Media',
+  'Education',
+  'Healthcare',
+  'Finance',
+  'Other'
 ];
 
 const statusOptions = [
@@ -67,6 +102,7 @@ const allowedFileTypes = {
 const SubmitProject = ({ editProjectId }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [githubLink, setGithubLink] = useState('');
   const [status, setStatus] = useState('pending');
   const [tags, setTags] = useState([]);
   const [success, setSuccess] = useState(false);
@@ -91,6 +127,8 @@ const SubmitProject = ({ editProjectId }) => {
   const [showFileSizeWarning, setShowFileSizeWarning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [filesToDelete, setFilesToDelete] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
 
   const calculateTotalSize = () => {
     let total = 0;
@@ -117,6 +155,7 @@ const SubmitProject = ({ editProjectId }) => {
             const projectData = projectSnap.data();
             setTitle(projectData.title);
             setDescription(projectData.description);
+            setGithubLink(projectData.githubLink || '');
             setStatus(projectData.status || 'pending');
             setTags(projectData.tags || []);
             setIsEditMode(true);
@@ -244,31 +283,62 @@ const SubmitProject = ({ editProjectId }) => {
     }
   };
 
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!title.trim()) {
+      errors.title = 'Title is required';
+    } else if (title.trim().length < 5) {
+      errors.title = 'Title must be at least 5 characters';
+    } else if (title.trim().length > 100) {
+      errors.title = 'Title must be less than 100 characters';
+    }
+    
+    if (!description.trim()) {
+      errors.description = 'Description is required';
+    } else if (description.trim().length < 20) {
+      errors.description = 'Description must be at least 20 characters';
+    } else if (description.trim().length > 2000) {
+      errors.description = 'Description must be less than 2000 characters';
+    }
+    
+    if (!files.projectZip && !isEditMode) {
+      errors.projectZip = 'Project ZIP file is required';
+    }
+    
+    const totalSizeMB = calculateTotalSize();
+    if (totalSizeMB > MAX_TOTAL_SIZE_MB) {
+      errors.files = `Total files size (${totalSizeMB.toFixed(2)}MB) exceeds maximum limit of ${MAX_TOTAL_SIZE_MB}MB`;
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess(false);
+    setValidationErrors({});
+    
+    // Prevent double submission
+    if (isSubmitting) {
+      return;
+    }
     
     if (!user) {
       setError("You must be logged in to submit a project.");
       return;
     }
 
-    if (!title.trim() || !description.trim()) {
-      setError("Title and description are required.");
+    // Validate form
+    if (!validateForm()) {
+      setError("Please fix the errors in the form before submitting.");
       return;
     }
 
-    if (!files.projectZip && !isEditMode) {
-      setError("Project ZIP file is required.");
-      return;
-    }
-
-    const totalSizeMB = calculateTotalSize();
-    if (totalSizeMB > MAX_TOTAL_SIZE_MB) {
-      setError(`Total files size exceeds maximum limit of ${MAX_TOTAL_SIZE_MB}MB`);
-      return;
-    }
+    // Set submitting state immediately to prevent double clicks
+    setIsSubmitting(true);
 
     setCurrentStep(1);
 
@@ -365,6 +435,7 @@ const SubmitProject = ({ editProjectId }) => {
         ownerEmail: user.email,
         ownerId: user.uid,
         updatedAt: Timestamp.now(),
+        ...(githubLink.trim() && { githubLink: githubLink.trim() }),
         ...(!isEditMode && { createdAt: Timestamp.now() }),
         ...(!isEditMode && { projectId })
       };
@@ -414,6 +485,7 @@ const SubmitProject = ({ editProjectId }) => {
       if (!isEditMode) {
         setTitle('');
         setDescription('');
+        setGithubLink('');
         setStatus('pending');
         setTags([]);
         setFiles({
@@ -422,11 +494,18 @@ const SubmitProject = ({ editProjectId }) => {
           images: [],
           videos: []
         });
+        // Scroll to success message
+        setTimeout(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 100);
       }
     } catch (err) {
       console.error("Error submitting project:", err);
       setError(err.message || "Failed to submit project. Please try again.");
       setCurrentStep(0);
+    } finally {
+      // Always reset submitting state
+      setIsSubmitting(false);
     }
   };
 
@@ -434,6 +513,7 @@ const SubmitProject = ({ editProjectId }) => {
     if (window.confirm('Are you sure you want to reset the form? All unsaved changes will be lost.')) {
       setTitle('');
       setDescription('');
+      setGithubLink('');
       setStatus('pending');
       setTags([]);
       setFiles({
@@ -444,6 +524,7 @@ const SubmitProject = ({ editProjectId }) => {
       });
       setError('');
       setSuccess(false);
+      setValidationErrors({});
       setUploadProgress({
         projectZip: 0,
         reportPdf: 0,
@@ -466,14 +547,19 @@ const SubmitProject = ({ editProjectId }) => {
     <Box sx={{ 
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #f8faff 0%, #e8ecff 100%)',
-      p: { xs: 2, sm: 3 }
+      p: { xs: 2, sm: 3 },
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      py: { xs: 3, sm: 4 }
     }}>
       <Paper elevation={3} sx={{ 
-        maxWidth: 800, 
+        maxWidth: 900, 
+        width: '100%',
         mx: 'auto', 
         p: { xs: 2, sm: 4 }, 
         borderRadius: 3,
-        m: { xs: 1, sm: 2 }
+        my: { xs: 2, sm: 3 }
       }}>
       <Box sx={{ textAlign: 'center', mb: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
@@ -507,11 +593,45 @@ const SubmitProject = ({ editProjectId }) => {
       {success && (
         <Alert 
           severity="success" 
-          sx={{ mb: 3 }}
+          sx={{ 
+            mb: 3,
+            animation: 'slideIn 0.5s ease-out',
+            '@keyframes slideIn': {
+              from: {
+                opacity: 0,
+                transform: 'translateY(-20px)'
+              },
+              to: {
+                opacity: 1,
+                transform: 'translateY(0)'
+              }
+            }
+          }}
           icon={<SuccessIcon fontSize="inherit" />}
           onClose={() => setSuccess(false)}
+          action={
+            !isEditMode && (
+              <Button 
+                color="inherit" 
+                size="small" 
+                onClick={() => {
+                  setSuccess(false);
+                  setCurrentStep(0);
+                }}
+              >
+                Submit Another
+              </Button>
+            )
+          }
         >
-          Project {isEditMode ? 'updated' : 'submitted'} successfully!
+          <Typography variant="h6" gutterBottom>
+            🎉 Project {isEditMode ? 'updated' : 'submitted'} successfully!
+          </Typography>
+          <Typography variant="body2">
+            {isEditMode 
+              ? 'Your project has been updated and changes will be visible to all users.'
+              : 'Your project is now pending review. You will be notified once it\'s approved.'}
+          </Typography>
         </Alert>
       )}
 
@@ -650,9 +770,17 @@ const SubmitProject = ({ editProjectId }) => {
               margin="normal"
               label="Project Title *"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (validationErrors.title) {
+                  setValidationErrors(prev => ({ ...prev, title: '' }));
+                }
+              }}
               required
               variant="outlined"
+              error={!!validationErrors.title}
+              helperText={validationErrors.title || `${title.length}/100 characters`}
+              inputProps={{ maxLength: 100 }}
               sx={{ mb: 2 }}
             />
 
@@ -661,11 +789,31 @@ const SubmitProject = ({ editProjectId }) => {
               margin="normal"
               label="Description *"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                if (validationErrors.description) {
+                  setValidationErrors(prev => ({ ...prev, description: '' }));
+                }
+              }}
               multiline
               rows={6}
               required
               variant="outlined"
+              error={!!validationErrors.description}
+              helperText={validationErrors.description || `${description.length}/2000 characters (minimum 20)`}
+              inputProps={{ maxLength: 2000 }}
+            />
+            
+            <TextField
+              fullWidth
+              margin="normal"
+              label="GitHub Repository Link (Optional)"
+              value={githubLink}
+              onChange={(e) => setGithubLink(e.target.value)}
+              variant="outlined"
+              placeholder="https://github.com/username/repository"
+              helperText="Share your project's GitHub repository link"
+              sx={{ mt: 2 }}
             />
           </Collapse>
         </Paper>
@@ -688,16 +836,52 @@ const SubmitProject = ({ editProjectId }) => {
           </Box>
           
           <Collapse in={expandedSection === 'files' || expandedSection === ''}>
-            <FormControl fullWidth margin="normal">
+            {/* File Size Summary */}
+            {calculateTotalSize() > 0 && (
+              <Paper 
+                variant="outlined" 
+                sx={{ 
+                  p: 2, 
+                  mb: 3, 
+                  bgcolor: showFileSizeWarning ? 'warning.light' : 'info.light',
+                  borderRadius: 2
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Total Files Size: {calculateTotalSize().toFixed(2)} MB / {MAX_TOTAL_SIZE_MB} MB
+                  </Typography>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={(calculateTotalSize() / MAX_TOTAL_SIZE_MB) * 100} 
+                    sx={{ width: '60%', height: 8, borderRadius: 4 }}
+                    color={showFileSizeWarning ? 'warning' : 'primary'}
+                  />
+                </Box>
+              </Paper>
+            )}
+            
+            {validationErrors.files && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {validationErrors.files}
+              </Alert>
+            )}
+            
+            <FormControl fullWidth margin="normal" error={!!validationErrors.projectZip}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <ZipIcon color="primary" sx={{ mr: 1 }} />
                 <Typography variant="subtitle1">
                   Project Files (ZIP/RAR) {!isEditMode && '*'}
                 </Typography>
-                <Tooltip title="Upload your project source code in a compressed format">
+                <Tooltip title="Upload your project source code in a compressed format (Max 50MB per file)">
                   <HelpIcon color="action" sx={{ ml: 1 }} />
                 </Tooltip>
               </Box>
+              {validationErrors.projectZip && (
+                <Typography variant="caption" color="error" sx={{ mb: 1, display: 'block' }}>
+                  {validationErrors.projectZip}
+                </Typography>
+              )}
               <input
                 accept=".zip,.rar"
                 style={{ display: 'none' }}
@@ -1035,20 +1219,33 @@ const SubmitProject = ({ editProjectId }) => {
               fontWeight: 600,
               borderRadius: 2,
               boxShadow: 2,
+              transition: 'all 0.3s ease',
               '&:hover': {
-                boxShadow: 4
+                boxShadow: 4,
+                transform: 'translateY(-2px)'
+              },
+              '&:disabled': {
+                opacity: 0.6,
+                cursor: 'not-allowed'
               }
             }}
-            disabled={(!files.projectZip && !isEditMode) || uploadProgress.overall > 0}
+            disabled={
+              isSubmitting || 
+              (!files.projectZip && !isEditMode) || 
+              uploadProgress.overall > 0 ||
+              Object.keys(validationErrors).length > 0
+            }
             startIcon={
-              uploadProgress.overall > 0 && uploadProgress.overall < 100 ? (
+              (isSubmitting || (uploadProgress.overall > 0 && uploadProgress.overall < 100)) ? (
                 <CircularProgress size={20} color="inherit" />
               ) : null
             }
           >
-            {uploadProgress.overall > 0 && uploadProgress.overall < 100 
-              ? 'Processing...' 
-              : isEditMode ? 'Update Project' : 'Submit Project'}
+            {isSubmitting 
+              ? 'Submitting...' 
+              : uploadProgress.overall > 0 && uploadProgress.overall < 100 
+                ? 'Processing...' 
+                : isEditMode ? 'Update Project' : 'Submit Project'}
           </Button>
         </Box>
       </form>
